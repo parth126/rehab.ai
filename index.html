@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PhysioTrack — Sets & Voice</title>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0c0f;--surf:#13171e;--border:#1e2530;
+  --green:#00e5a0;--red:#ff4444;--amber:#f5a623;--blue:#5a8cff;
+  --text:#e8eaed;--muted:#5a6470;
+  --font:'DM Sans',sans-serif;--mono:'DM Mono',monospace;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--font);height:100vh;overflow:hidden;display:flex;flex-direction:column}
+
+header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--surf);border-bottom:1px solid var(--border);flex-shrink:0}
+.logo{font-family:var(--mono);font-size:12px;color:var(--green);letter-spacing:.1em;text-transform:uppercase}
+.head-right{display:flex;align-items:center;gap:10px}
+.mute-btn{display:flex;align-items:center;gap:5px;font-size:11px;font-family:var(--mono);color:var(--muted);background:var(--bg);border:1px solid var(--border);border-radius:20px;padding:4px 11px;cursor:pointer;transition:all .2s}
+.mute-btn:hover{border-color:var(--muted)}
+.mute-btn.muted{color:var(--red);border-color:var(--red)}
+.status-pill{display:flex;align-items:center;gap:6px;font-size:11px;font-family:var(--mono);color:var(--muted);background:var(--bg);border:1px solid var(--border);border-radius:20px;padding:3px 10px}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--muted);transition:background .3s}
+.dot.active{background:var(--green);box-shadow:0 0 6px var(--green)}
+.dot.warn{background:var(--red);box-shadow:0 0 6px var(--red)}
+.dot.loading{background:var(--amber);animation:blink 1s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+
+.ex-bar{display:flex;gap:6px;padding:10px 16px;background:var(--surf);border-bottom:1px solid var(--border);flex-shrink:0;overflow-x:auto;align-items:center}
+.ex-btn{flex-shrink:0;padding:6px 16px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--muted);font-family:var(--font);font-size:12px;cursor:pointer;transition:all .2s;white-space:nowrap}
+.ex-btn:hover{border-color:var(--green);color:var(--text)}
+.ex-btn.active{background:var(--green);color:#000;border-color:var(--green);font-weight:600}
+.target-ctrl{margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0}
+.target-ctrl label{font-size:11px;font-family:var(--mono);color:var(--muted)}
+.target-input{width:54px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:13px;padding:4px 8px;text-align:center}
+
+.main{display:grid;grid-template-columns:1fr 270px;flex:1;overflow:hidden;min-height:0}
+
+.cam-wrap{position:relative;background:#000;overflow:hidden}
+video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);opacity:0}
+canvas{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+
+.cam-ui{position:absolute;inset:0;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between;padding:12px}
+.ex-info-box{background:rgba(0,0,0,.65);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:10px 14px;max-width:300px}
+.ex-title{font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px}
+.ex-cue{font-size:11px;color:var(--muted);line-height:1.6}
+
+.counter-row{display:flex;gap:10px;align-items:flex-end}
+.counter-card{background:rgba(0,0,0,.75);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:8px 16px;text-align:center;min-width:96px}
+.counter-num{font-family:var(--mono);font-size:38px;font-weight:500;line-height:1;color:var(--green)}
+.counter-num small{font-size:18px;color:var(--muted)}
+.counter-label{font-size:10px;color:var(--muted);font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase;margin-top:2px}
+.phase-badge{background:rgba(0,229,160,.12);border:1px solid var(--green);border-radius:20px;padding:5px 14px;font-size:11px;font-family:var(--mono);color:var(--green);align-self:center}
+.phase-badge.down{background:rgba(245,166,35,.12);border-color:var(--amber);color:var(--amber)}
+.end-set-btn{pointer-events:all;background:rgba(0,0,0,.75);border:1px solid var(--border);color:var(--text);font-family:var(--font);font-size:12px;font-weight:500;cursor:pointer;border-radius:8px;padding:8px 14px;transition:all .2s;align-self:center}
+.end-set-btn:hover{border-color:var(--amber);color:var(--amber)}
+
+.legend{position:absolute;top:12px;right:12px;display:flex;flex-direction:column;gap:4px}
+.legend-item{display:flex;align-items:center;gap:6px;font-size:10px;font-family:var(--mono);color:var(--muted);background:rgba(0,0,0,.65);padding:3px 8px;border-radius:4px}
+.leg-line{width:16px;height:2px;border-radius:1px;flex-shrink:0}
+
+.start-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(0,0,0,.78)}
+.start-btn{background:var(--green);color:#000;border:none;border-radius:8px;padding:13px 32px;font-family:var(--font);font-size:14px;font-weight:600;cursor:pointer;transition:opacity .2s}
+.start-btn:hover{opacity:.85}
+
+.rest-overlay{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:rgba(8,10,14,.92);pointer-events:all}
+.rest-overlay.show{display:flex}
+.rest-title{font-size:13px;font-family:var(--mono);color:var(--muted);letter-spacing:.1em;text-transform:uppercase}
+.rest-timer{font-family:var(--mono);font-size:72px;font-weight:500;color:var(--green);line-height:1}
+.set-summary{text-align:center;max-width:380px}
+.summary-reps{font-size:22px;font-weight:600;color:var(--text);margin-bottom:6px}
+.summary-cue{font-size:14px;color:var(--amber);line-height:1.5}
+.summary-cue.clean{color:var(--green)}
+.rest-actions{display:flex;gap:10px}
+.rest-btn{background:transparent;border:1px solid var(--border);color:var(--text);font-family:var(--font);font-size:13px;cursor:pointer;border-radius:8px;padding:10px 20px;transition:all .2s}
+.rest-btn:hover{border-color:var(--green);color:var(--green)}
+.rest-btn.primary{background:var(--green);color:#000;border-color:var(--green);font-weight:600}
+.rep-dots{display:flex;gap:5px;flex-wrap:wrap;justify-content:center;max-width:320px}
+.rep-dot{width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;border:1px solid}
+.rep-dot.good{background:rgba(0,229,160,.12);border-color:var(--green);color:var(--green)}
+.rep-dot.bad{background:rgba(255,68,68,.12);border-color:var(--red);color:var(--red)}
+
+.panel{background:var(--surf);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto}
+.panel-sec{padding:14px 16px;border-bottom:1px solid var(--border)}
+.sec-label{font-size:10px;font-family:var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+.feedback{border-radius:8px;padding:12px;font-size:12px;line-height:1.6;border:1px solid var(--border);color:var(--muted);transition:all .3s;min-height:52px}
+.feedback.good{border-color:var(--green);color:var(--green);background:rgba(0,229,160,.06)}
+.feedback.bad{border-color:var(--red);color:var(--red);background:rgba(255,68,68,.06)}
+.feedback.info{border-color:var(--amber);color:var(--amber);background:rgba(245,166,35,.06)}
+.muscle-row{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.muscle-name{font-size:11px;color:var(--text);min-width:90px}
+.bar-wrap{flex:1;height:3px;background:var(--border);border-radius:2px;overflow:hidden}
+.bar{height:100%;border-radius:2px;transition:width .35s ease,background .35s;width:0%}
+.bar.hi{background:var(--green)}.bar.med{background:var(--amber)}.bar.lo{background:var(--muted)}
+.stat-row{display:flex;justify-content:space-between;font-size:12px;margin-bottom:8px}
+.stat-row .lbl{color:var(--muted)}
+.stat-row .val{color:var(--text);font-family:var(--mono)}
+.fps{position:absolute;bottom:10px;left:10px;font-family:var(--mono);font-size:10px;color:var(--muted);background:rgba(0,0,0,.5);padding:2px 6px;border-radius:3px}
+.panel::-webkit-scrollbar{width:3px}
+.panel::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">PhysioTrack — Sets &amp; Voice</div>
+  <div class="head-right">
+    <div class="mute-btn" id="mute-btn" onclick="toggleMute()"><span id="mute-icon">🔊</span><span id="mute-txt">voice on</span></div>
+    <div class="status-pill"><div class="dot" id="dot"></div><span id="status-txt">idle</span></div>
+  </div>
+</header>
+
+<div class="ex-bar">
+  <button class="ex-btn active" data-ex="squat"  onclick="selectEx('squat',this)">Squat</button>
+  <button class="ex-btn"        data-ex="lunge"  onclick="selectEx('lunge',this)">Lunge</button>
+  <button class="ex-btn"        data-ex="bridge" onclick="selectEx('bridge',this)">Bridge</button>
+  <button class="ex-btn"        data-ex="crunch" onclick="selectEx('crunch',this)">Crunch</button>
+  <div class="target-ctrl">
+    <label>target reps</label>
+    <input class="target-input" id="target-input" type="number" min="1" max="50" value="10" onchange="setTarget(this.value)">
+  </div>
+</div>
+
+<div class="main">
+  <div class="cam-wrap" id="cam-wrap">
+    <video id="vid" playsinline></video>
+    <canvas id="cvs"></canvas>
+
+    <div class="cam-ui">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div class="ex-info-box">
+          <div class="ex-title" id="ex-title">Squat</div>
+          <div class="ex-cue" id="ex-cue"></div>
+        </div>
+        <div class="legend">
+          <div class="legend-item"><div class="leg-line" style="background:var(--green)"></div>Your pose</div>
+          <div class="legend-item"><div class="leg-line" style="background:var(--red)"></div>Form error</div>
+        </div>
+      </div>
+
+      <div class="counter-row">
+        <div class="counter-card">
+          <div class="counter-num"><span id="rep-num">0</span><small id="rep-target">/10</small></div>
+          <div class="counter-label" id="rep-label">reps · set <span id="set-num">1</span></div>
+        </div>
+        <div class="phase-badge" id="phase-badge">ready</div>
+        <button class="end-set-btn" onclick="endSet('manual')">End set</button>
+      </div>
+    </div>
+
+    <div class="fps" id="fps">— fps</div>
+
+    <div class="start-overlay" id="start-overlay">
+      <div style="font-size:13px;color:var(--muted)">AI form tracking + voice coaching · on-device</div>
+      <button class="start-btn" onclick="startCam()">Enable camera</button>
+      <div style="font-size:11px;color:var(--muted)">Camera &amp; voice run locally — nothing uploaded</div>
+    </div>
+
+    <div class="rest-overlay" id="rest-overlay">
+      <div class="rest-title">Rest</div>
+      <div class="rest-timer" id="rest-timer">60</div>
+      <div class="set-summary">
+        <div class="summary-reps" id="summary-reps">8 reps · 6 near perfect</div>
+        <div class="summary-cue" id="summary-cue">Keep your back straighter next set.</div>
+      </div>
+      <div class="rep-dots" id="rep-dots"></div>
+      <div class="rest-actions">
+        <button class="rest-btn" onclick="addRestTime()">+30s</button>
+        <button class="rest-btn primary" onclick="startNextSet()">Start next set</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-sec">
+      <div class="sec-label">Live feedback</div>
+      <div class="feedback" id="feedback">Enable camera to begin.</div>
+    </div>
+    <div class="panel-sec">
+      <div class="sec-label">This set</div>
+      <div class="stat-row"><span class="lbl">Reps done</span><span class="val" id="stat-reps">0</span></div>
+      <div class="stat-row"><span class="lbl">Near perfect</span><span class="val" id="stat-perfect">0</span></div>
+      <div class="stat-row"><span class="lbl">Sets completed</span><span class="val" id="stat-sets">0</span></div>
+    </div>
+    <div class="panel-sec">
+      <div class="sec-label">Muscles working</div>
+      <div id="muscles"></div>
+    </div>
+    <div class="panel-sec" style="border:none">
+      <div class="sec-label">How to do it</div>
+      <div style="font-size:11px;color:var(--muted);line-height:1.9" id="guide-text"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+function avg(a,b){if(a!=null&&b!=null)return(a+b)/2;if(a!=null)return a;if(b!=null)return b;return null}
+function clamp(v,mn=0,mx=100){return Math.max(mn,Math.min(mx,v))}
+function mapR(v,i0,i1,o0,o1){return o0+(o1-o0)*((v-i0)/(i1-i0))}
+function calcAngle(a,b,c){
+  if(!a||!b||!c)return null;
+  if((a.visibility||0)<0.25||(b.visibility||0)<0.25||(c.visibility||0)<0.25)return null;
+  const rad=Math.atan2(c.y-b.y,c.x-b.x)-Math.atan2(a.y-b.y,a.x-b.x);
+  let d=Math.abs(rad*180/Math.PI);if(d>180)d=360-d;return Math.round(d);
+}
+
+const EXERCISES={
+  squat:{
+    name:'Squat',
+    cue:'Feet shoulder-width apart. Lower until thighs are parallel. Chest tall, knees over toes.',
+    guide:'1. Feet shoulder-width, toes slightly out.\n2. Brace core, chest tall.\n3. Push hips back, bend knees.\n4. Lower to ~90° at the knee.\n5. Drive through heels to stand.',
+    muscles:[{n:'Quadriceps',k:'quad'},{n:'Glutes',k:'glute'},{n:'Hamstrings',k:'ham'},{n:'Core',k:'core'}],
+    repJoint:'knee_avg',repDown:110,repUp:158,
+    errLabels:{back:'Keep your back straighter',valgus:'Push your knees outward',shallow:'Squat deeper next set'},
+    check(ang,lm){
+      const k=avg(ang.knee_r,ang.knee_l),h=avg(ang.hip_r,ang.hip_l);
+      if(k===null)return{status:'',msg:'Stand in frame, full body visible',err:null,joints:[]};
+      if(k>162)return{status:'info',msg:'Begin your squat',err:null,joints:[]};
+      if(lm&&lm[25]&&lm[26]&&lm[23]&&lm[24]){
+        const kneeW=Math.abs(lm[25].x-lm[26].x),hipW=Math.abs(lm[23].x-lm[24].x);
+        if(kneeW<hipW*0.7&&k<140)return{status:'bad',msg:'Knees caving in — push them out',err:'valgus',joints:[25,26,27,28]};
+      }
+      if(h!==null&&h<85)return{status:'bad',msg:'Leaning forward — chest up',err:'back',joints:[11,12,23,24]};
+      if(k<=105)return{status:'good',msg:'Great depth!',err:null,joints:[]};
+      return{status:'info',msg:'Lower more — aim for 90°',err:'shallow',joints:[]};
+    },
+    score(ang){const k=avg(ang.knee_r,ang.knee_l)||160,h=avg(ang.hip_r,ang.hip_l)||170;
+      return{quad:clamp(mapR(k,160,80,0,100)),glute:clamp(mapR(h,170,80,0,100)),ham:clamp(mapR(k,170,90,0,70)),core:30}}
+  },
+  lunge:{
+    name:'Lunge',
+    cue:'Step forward, lower back knee. Front shin vertical. Torso upright.',
+    guide:'1. Feet hip-width, stand tall.\n2. Step one foot forward.\n3. Lower back knee toward floor.\n4. Front knee over ankle.\n5. Push back through front heel.',
+    muscles:[{n:'Quadriceps',k:'quad'},{n:'Glutes',k:'glute'},{n:'Hip flexors',k:'hip'},{n:'Core',k:'core'}],
+    repJoint:'knee_min',repDown:108,repUp:158,
+    errLabels:{back:'Keep your torso upright',deep:'Step wider — knee over ankle',shallow:'Lower a bit more'},
+    check(ang,lm){
+      const k=ang.knee_r!==null&&ang.knee_l!==null?Math.min(ang.knee_r,ang.knee_l):(ang.knee_r||ang.knee_l);
+      const h=avg(ang.hip_r,ang.hip_l);
+      if(k===null)return{status:'',msg:'Step into a lunge',err:null,joints:[]};
+      if(k>160)return{status:'info',msg:'Lower into the lunge',err:null,joints:[]};
+      if(k<70)return{status:'bad',msg:'Front knee too far — step wider',err:'deep',joints:[25,26]};
+      if(h!==null&&h<135)return{status:'bad',msg:'Torso leaning — chest tall',err:'back',joints:[11,12,23,24]};
+      if(k<=105)return{status:'good',msg:'Great lunge!',err:null,joints:[]};
+      return{status:'info',msg:'Lower to 90° at front knee',err:'shallow',joints:[]};
+    },
+    score(ang){const k=Math.min(ang.knee_r||180,ang.knee_l||180);
+      return{quad:clamp(mapR(k,160,80,0,100)),glute:clamp(mapR(k,160,90,0,85)),hip:clamp(mapR(k,160,80,0,70)),core:35}}
+  },
+  bridge:{
+    name:'Glute Bridge',
+    cue:'Lie on back, feet flat. Drive hips up, squeeze glutes. Hold briefly at top.',
+    guide:'1. Lie on back, knees bent ~90°.\n2. Feet flat, hip-width.\n3. Squeeze glutes, drive hips up.\n4. Line from knees to shoulders.\n5. Lower slowly, repeat.',
+    muscles:[{n:'Glutes',k:'glute'},{n:'Hamstrings',k:'ham'},{n:'Core',k:'core'},{n:'Lower back',k:'back'}],
+    repJoint:'hip_avg',repDown:120,repUp:158,
+    errLabels:{feet:'Adjust foot distance',low:'Drive hips higher'},
+    check(ang,lm){
+      const h=avg(ang.hip_r,ang.hip_l),k=avg(ang.knee_r,ang.knee_l);
+      if(h===null)return{status:'',msg:'Lie on your back, knees bent',err:null,joints:[]};
+      if(h>160)return{status:'info',msg:'Drive hips up — squeeze glutes',err:null,joints:[]};
+      if(k!==null&&k<65)return{status:'bad',msg:'Feet too close — slide away',err:'feet',joints:[25,26,27,28]};
+      if(k!==null&&k>125)return{status:'bad',msg:'Feet too far — bring closer',err:'feet',joints:[25,26,27,28]};
+      if(h<=125)return{status:'good',msg:'Full bridge!',err:null,joints:[]};
+      return{status:'info',msg:'Push hips higher',err:'low',joints:[]};
+    },
+    score(ang){const h=avg(ang.hip_r,ang.hip_l)||170,a=clamp(mapR(h,170,110,0,100));
+      return{glute:a,ham:clamp(a*0.85),core:clamp(a*0.5+20),back:clamp(a*0.6)}}
+  },
+  crunch:{
+    name:'Crunch',
+    cue:'Lie on back, knees bent. Curl shoulders up. Lower back stays down.',
+    guide:'1. Lie on back, knees bent.\n2. Fingertips behind ears.\n3. Exhale, curl shoulders up.\n4. Lower back stays on floor.\n5. Lower slowly, repeat.',
+    muscles:[{n:'Rectus abdominis',k:'ra'},{n:'Obliques',k:'obl'},{n:'Core',k:'core'}],
+    repJoint:'shoulder_avg',repDown:155,repUp:128,invertRep:true,
+    errLabels:{hips:'Keep lower back down',neck:'Don\'t pull your neck',shallow:'Curl a little higher'},
+    check(ang,lm){
+      const s=avg(ang.shoulder_r,ang.shoulder_l),h=avg(ang.hip_r,ang.hip_l);
+      if(s===null)return{status:'',msg:'Lie back, knees bent, curl up',err:null,joints:[]};
+      if(s>168)return{status:'info',msg:'Curl shoulders up',err:null,joints:[]};
+      if(h!==null&&h<118)return{status:'bad',msg:'Lower back lifting — keep it down',err:'hips',joints:[23,24,25,26]};
+      if(s<108)return{status:'bad',msg:'Neck straining — ease off',err:'neck',joints:[0,7,8,11,12]};
+      if(s<=142)return{status:'good',msg:'Good crunch!',err:null,joints:[]};
+      return{status:'info',msg:'Curl a little higher',err:'shallow',joints:[]};
+    },
+    score(ang){const s=avg(ang.shoulder_r,ang.shoulder_l)||170,a=clamp(mapR(s,170,120,0,100));
+      return{ra:a,obl:clamp(a*0.7),core:clamp(a*0.9)}}
+  }
+};
+
+let curEx='squat';
+let angles={};
+let targetReps=10;
+let setNum=1, setsCompleted=0;
+let reps=0, perfectReps=0;
+let phase='up';
+let badJoints=[];
+let muted=false;
+let frameCount=0,lastFpsT=performance.now();
+let voicesReady=false;
+
+let curRepErrors={};
+let curRepFrames=0;
+let curRepBadFrames=0;
+let setRepLog=[];
+let setErrorTally={};
+
+const PERFECT_TOLERANCE=0.15;
+
+let restActive=false;
+let restRemaining=60;
+let restTimerInterval=null;
+const DEFAULT_REST=60;
+
+function speak(text,opts={}){
+  if(muted||!('speechSynthesis'in window))return;
+  if(opts.interrupt)window.speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(text);
+  u.rate=opts.rate||1.0;u.pitch=opts.pitch||1.0;u.volume=1.0;
+  window.speechSynthesis.speak(u);
+}
+function numberToWord(n){
+  const w=['zero','one','two','three','four','five','six','seven','eight','nine','ten',
+    'eleven','twelve','thirteen','fourteen','fifteen','sixteen','seventeen','eighteen','nineteen','twenty'];
+  return n<=20?w[n]:String(n);
+}
+function toggleMute(){
+  muted=!muted;
+  const b=document.getElementById('mute-btn');
+  document.getElementById('mute-icon').textContent=muted?'🔇':'🔊';
+  document.getElementById('mute-txt').textContent=muted?'voice off':'voice on';
+  b.classList.toggle('muted',muted);
+  if(muted&&'speechSynthesis'in window)window.speechSynthesis.cancel();
+}
+
+function buildPanel(){
+  const ex=EXERCISES[curEx];
+  document.getElementById('ex-title').textContent=ex.name;
+  document.getElementById('ex-cue').textContent=ex.cue;
+  document.getElementById('guide-text').innerHTML=ex.guide.replace(/\n/g,'<br>');
+  const ml=document.getElementById('muscles');
+  ml.innerHTML=ex.muscles.map(m=>`<div class="muscle-row"><div class="muscle-name">${m.n}</div><div class="bar-wrap"><div class="bar lo" id="bar-${m.k}" style="width:0%"></div></div></div>`).join('');
+  updateStats();
+}
+function selectEx(id,btn){
+  curEx=id;
+  document.querySelectorAll('.ex-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  resetSet();setNum=1;setsCompleted=0;
+  buildPanel();
+}
+function setTarget(v){
+  targetReps=Math.max(1,Math.min(50,parseInt(v)||10));
+  document.getElementById('target-input').value=targetReps;
+  document.getElementById('rep-target').textContent='/'+targetReps;
+}
+
+function resetSet(){
+  reps=0;perfectReps=0;phase='up';badJoints=[];
+  curRepErrors={};curRepFrames=0;curRepBadFrames=0;
+  setRepLog=[];setErrorTally={};
+  document.getElementById('rep-num').textContent=0;
+  document.getElementById('rep-target').textContent='/'+targetReps;
+  document.getElementById('set-num').textContent=setNum;
+  document.getElementById('phase-badge').className='phase-badge';
+  document.getElementById('phase-badge').textContent='ready';
+  updateStats();
+}
+function updateStats(){
+  document.getElementById('stat-reps').textContent=reps;
+  document.getElementById('stat-perfect').textContent=perfectReps;
+  document.getElementById('stat-sets').textContent=setsCompleted;
+}
+
+function onRepComplete(){
+  reps++;
+  const wasClean=(curRepFrames===0)||(curRepBadFrames/Math.max(curRepFrames,1))<=PERFECT_TOLERANCE;
+  const errsThisRep=Object.keys(curRepErrors);
+  if(wasClean&&errsThisRep.length===0)perfectReps++;
+  setRepLog.push({rep:reps,clean:wasClean&&errsThisRep.length===0,errors:errsThisRep});
+  errsThisRep.forEach(e=>{setErrorTally[e]=(setErrorTally[e]||0)+1});
+  curRepErrors={};curRepFrames=0;curRepBadFrames=0;
+
+  document.getElementById('rep-num').textContent=reps;
+  speak(numberToWord(reps),{interrupt:true,rate:1.05});
+  updateStats();
+
+  if(reps>=targetReps)setTimeout(()=>endSet('target'),650);
+}
+
+const ERR_PRIORITY=['valgus','back','neck','hips','feet','deep','low','shallow'];
+function pickMainCue(){
+  const ex=EXERCISES[curEx];
+  const present=Object.keys(setErrorTally).filter(e=>setErrorTally[e]>=Math.max(2,Math.ceil(reps*0.34)));
+  if(present.length===0)return null;
+  present.sort((a,b)=>ERR_PRIORITY.indexOf(a)-ERR_PRIORITY.indexOf(b));
+  const main=present[0];
+  return ex.errLabels[main]||null;
+}
+
+function endSet(reason){
+  if(restActive||reps===0&&reason==='manual'){if(reps===0)return;}
+  if(reps===0)return;
+  setsCompleted++;
+  const cue=pickMainCue();
+  const repWord=reps===1?'rep':'reps';
+
+  let spoken,displayReps,displayCue,cueClean=false;
+  displayReps=`${reps} ${repWord} · ${perfectReps} near perfect`;
+  if(cue){
+    spoken=`${numberToWord(reps)} ${repWord}, ${numberToWord(perfectReps)} near perfect. ${cue}.`;
+    displayCue=cue+'.';
+  } else {
+    spoken=`${numberToWord(reps)} ${repWord}. Great form!`;
+    displayCue='Great form — nothing to fix!';cueClean=true;
+  }
+
+  document.getElementById('summary-reps').textContent=displayReps;
+  const cueEl=document.getElementById('summary-cue');
+  cueEl.textContent=displayCue;
+  cueEl.classList.toggle('clean',cueClean);
+
+  const dots=document.getElementById('rep-dots');
+  dots.innerHTML=setRepLog.map(r=>`<div class="rep-dot ${r.clean?'good':'bad'}">${r.clean?'✓':'✗'}</div>`).join('');
+
+  speak(spoken,{interrupt:true,rate:1.0});
+  showRest();
+}
+
+function showRest(){
+  restActive=true;
+  restRemaining=DEFAULT_REST;
+  document.getElementById('rest-timer').textContent=restRemaining;
+  document.getElementById('rest-overlay').classList.add('show');
+  clearInterval(restTimerInterval);
+  restTimerInterval=setInterval(()=>{
+    restRemaining--;
+    document.getElementById('rest-timer').textContent=restRemaining;
+    if(restRemaining<=0){clearInterval(restTimerInterval);startNextSet();}
+  },1000);
+}
+function addRestTime(){restRemaining+=30;document.getElementById('rest-timer').textContent=restRemaining;}
+function startNextSet(){
+  clearInterval(restTimerInterval);
+  restActive=false;
+  document.getElementById('rest-overlay').classList.remove('show');
+  setNum++;
+  resetSet();
+  speak('Next set. '+numberToWord(targetReps)+' reps.',{interrupt:true});
+}
+
+function countRep(ang){
+  const ex=EXERCISES[curEx];
+  if(restActive)return;
+  let val=null;
+  if(ex.repJoint==='knee_avg')val=avg(ang.knee_r,ang.knee_l);
+  else if(ex.repJoint==='knee_min')val=ang.knee_r!==null&&ang.knee_l!==null?Math.min(ang.knee_r,ang.knee_l):(ang.knee_r||ang.knee_l);
+  else if(ex.repJoint==='hip_avg')val=avg(ang.hip_r,ang.hip_l);
+  else if(ex.repJoint==='shoulder_avg')val=avg(ang.shoulder_r,ang.shoulder_l);
+  if(val===null)return;
+  const badge=document.getElementById('phase-badge');
+  if(!ex.invertRep){
+    if(phase==='up'&&val<ex.repDown){phase='down';badge.className='phase-badge down';badge.textContent='↓ down';}
+    else if(phase==='down'&&val>ex.repUp){phase='up';badge.className='phase-badge';badge.textContent='↑ up';onRepComplete();}
+  } else {
+    if(phase==='up'&&val>ex.repDown){phase='down';badge.className='phase-badge down';badge.textContent='↓ lower';}
+    else if(phase==='down'&&val<ex.repUp){phase='up';badge.className='phase-badge';badge.textContent='↑ up';onRepComplete();}
+  }
+}
+
+function drawLive(ctx,lm,w,h,bad){
+  const CONNS=window.POSE_CONNECTIONS||[];
+  ctx.lineCap='round';ctx.setLineDash([]);
+  CONNS.forEach(([a,b])=>{
+    const pa=lm[a],pb=lm[b];
+    if(!pa||!pb||(pa.visibility||0)<0.25||(pb.visibility||0)<0.25)return;
+    const isBad=bad.includes(a)||bad.includes(b);
+    ctx.strokeStyle=isBad?'rgba(255,68,68,0.9)':'rgba(0,229,160,0.7)';
+    ctx.lineWidth=isBad?3.5:2.5;
+    ctx.beginPath();ctx.moveTo(pa.x*w,pa.y*h);ctx.lineTo(pb.x*w,pb.y*h);ctx.stroke();
+  });
+  lm.forEach((p,i)=>{
+    if(!p||(p.visibility||0)<0.28)return;
+    const isBad=bad.includes(i),isKey=[11,12,13,14,15,16,23,24,25,26,27,28].includes(i);
+    ctx.beginPath();ctx.arc(p.x*w,p.y*h,isKey?6:3,0,Math.PI*2);
+    ctx.fillStyle=isBad?'#ff4444':isKey?'#00e5a0':'rgba(0,229,160,0.45)';ctx.fill();
+  });
+}
+function updateMuscles(ang){
+  const ex=EXERCISES[curEx],s=ex.score(ang);
+  ex.muscles.forEach(m=>{const v=s[m.k]||0,b=document.getElementById('bar-'+m.k);
+    if(b){b.style.width=v+'%';b.className='bar '+(v>65?'hi':v>30?'med':'lo');}});
+}
+function setFeedback(cls,msg){const el=document.getElementById('feedback');el.className='feedback'+(cls?' '+cls:'');el.textContent=msg;}
+function setStatus(cls,txt){document.getElementById('dot').className='dot'+(cls?' '+cls:'');document.getElementById('status-txt').textContent=txt;}
+
+function onResults(res){
+  const cvs=document.getElementById('cvs'),ctx=cvs.getContext('2d'),w=cvs.width,h=cvs.height;
+  frameCount++;const now=performance.now();
+  if(now-lastFpsT>1000){document.getElementById('fps').textContent=Math.round(frameCount*1000/(now-lastFpsT))+' fps';frameCount=0;lastFpsT=now;}
+  ctx.clearRect(0,0,w,h);ctx.drawImage(res.image,0,0,w,h);
+
+  if(!res.poseLandmarks){setStatus('warn','searching');setFeedback('','Stand in frame, full body visible');return;}
+  setStatus('active','tracking');
+  const lm=res.poseLandmarks;
+  angles={
+    knee_r:calcAngle(lm[24],lm[26],lm[28]),knee_l:calcAngle(lm[23],lm[25],lm[27]),
+    shoulder_r:calcAngle(lm[14],lm[12],lm[24]),shoulder_l:calcAngle(lm[13],lm[11],lm[23]),
+    hip_r:calcAngle(lm[12],lm[24],lm[26]),hip_l:calcAngle(lm[11],lm[23],lm[25]),
+  };
+  const ex=EXERCISES[curEx],result=ex.check(angles,lm);
+  badJoints=result.joints||[];
+  setFeedback(result.status,result.msg);
+
+  if(!restActive&&phase==='down'){
+    curRepFrames++;
+    if(result.status==='bad'){curRepBadFrames++;if(result.err)curRepErrors[result.err]=(curRepErrors[result.err]||0)+1;}
+  }
+  countRep(angles);
+  drawLive(ctx,lm,w,h,badJoints);
+  updateMuscles(angles);
+}
+
+async function startCam(){
+  document.getElementById('start-overlay').style.display='none';
+  setStatus('loading','loading…');
+  if('speechSynthesis'in window){window.speechSynthesis.getVoices();voicesReady=true;}
+  const vid=document.getElementById('vid'),cvs=document.getElementById('cvs'),wrap=document.getElementById('cam-wrap');
+  const resize=()=>{cvs.width=wrap.clientWidth;cvs.height=wrap.clientHeight};resize();window.addEventListener('resize',resize);
+  const pose=new Pose({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}`});
+  pose.setOptions({modelComplexity:1,smoothLandmarks:true,enableSegmentation:false,minDetectionConfidence:.5,minTrackingConfidence:.5});
+  pose.onResults(onResults);
+  const cam=new Camera(vid,{onFrame:async()=>{await pose.send({image:vid})},width:1280,height:720});
+  try{await cam.start();setStatus('loading','detecting…');speak('Camera ready. '+numberToWord(targetReps)+' reps. Begin when ready.',{interrupt:true});}
+  catch(e){setStatus('','camera error');setFeedback('bad','Camera access denied. Allow permissions and reload.');document.getElementById('start-overlay').style.display='flex';}
+}
+
+setTarget(10);
+buildPanel();
+</script>
+</body>
+</html>
