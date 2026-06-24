@@ -103,6 +103,70 @@ canvas{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
 .fps{position:absolute;bottom:10px;left:10px;font-family:var(--mono);font-size:10px;color:var(--muted);background:rgba(0,0,0,.5);padding:2px 6px;border-radius:3px}
 .panel::-webkit-scrollbar{width:3px}
 .panel::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+
+.drawer-handle{display:none}
+.rotate-hint{display:none}
+
+@media (max-width:820px){
+  .main{grid-template-columns:1fr;grid-template-rows:1fr}
+  .cam-wrap{grid-row:1;grid-column:1}
+
+  .ex-info-box{max-width:62%;padding:8px 11px}
+  .ex-title{font-size:14px}
+  .ex-cue{font-size:11px;display:none}
+
+  .counter-card{min-width:auto;padding:10px 18px}
+  .counter-num{font-size:48px}
+  .counter-num small{font-size:22px}
+  .counter-label{font-size:11px}
+  .phase-badge{font-size:13px;padding:7px 16px}
+  .end-set-btn{font-size:14px;padding:11px 18px}
+
+  .feedback{font-size:15px;padding:14px;line-height:1.5}
+
+  .panel{
+    position:fixed;left:0;right:0;bottom:0;
+    border-left:none;border-top:1px solid var(--border);
+    border-radius:18px 18px 0 0;
+    max-height:74vh;height:auto;
+    transform:translateY(calc(100% - 116px));
+    transition:transform .32s cubic-bezier(.4,0,.2,1);
+    z-index:40;background:var(--surf);
+    box-shadow:0 -8px 28px rgba(0,0,0,.45);
+  }
+  .panel.open{transform:translateY(0)}
+  .drawer-handle{
+    display:flex;flex-direction:column;align-items:center;gap:7px;
+    padding:11px 16px 9px;cursor:pointer;flex-shrink:0;
+    border-bottom:1px solid var(--border);
+  }
+  .drawer-grip{width:38px;height:4px;border-radius:2px;background:var(--muted);opacity:.6}
+  .drawer-peek{display:flex;align-items:center;gap:14px;font-family:var(--mono);font-size:13px;color:var(--text)}
+  .drawer-peek .gp{color:var(--green)}
+  .drawer-peek .lbl{color:var(--muted);font-size:11px}
+
+  .panel-sec:last-child{padding-bottom:28px}
+
+  .rotate-hint{
+    display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+    z-index:30;background:rgba(8,10,14,.9);border:1px solid var(--border);
+    border-radius:12px;padding:18px 22px;text-align:center;pointer-events:none;
+    font-size:13px;color:var(--text);max-width:240px;line-height:1.5;
+  }
+  .rotate-hint .ico{font-size:30px;display:block;margin-bottom:8px}
+}
+
+@media (max-width:820px) and (orientation:portrait){
+  .rotate-hint{display:block}
+}
+
+@media (max-width:820px) and (orientation:landscape){
+  .panel{max-height:88vh;transform:translateY(calc(100% - 64px))}
+  .drawer-handle{padding:8px 16px 6px}
+  header{padding:7px 14px}
+  .ex-bar{padding:7px 14px}
+  .counter-num{font-size:38px}
+}
 </style>
 </head>
 <body>
@@ -155,6 +219,11 @@ canvas{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
 
     <div class="fps" id="fps">— fps</div>
 
+    <div class="rotate-hint" id="rotate-hint">
+      <span class="ico">📱↻</span>
+      Turn your phone sideways for the best view of your full body
+    </div>
+
     <div class="start-overlay" id="start-overlay">
       <div style="font-size:13px;color:var(--muted)">AI form tracking + voice coaching · on-device</div>
       <button class="start-btn" onclick="startCam()">Enable camera</button>
@@ -176,7 +245,15 @@ canvas{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
     </div>
   </div>
 
-  <div class="panel">
+  <div class="panel" id="panel">
+    <div class="drawer-handle" onclick="toggleDrawer()">
+      <div class="drawer-grip"></div>
+      <div class="drawer-peek">
+        <span><span class="gp" id="peek-reps">0</span><span class="lbl"> reps</span></span>
+        <span><span class="gp" id="peek-set">1</span><span class="lbl"> set</span></span>
+        <span class="lbl" id="peek-hint">tap for details</span>
+      </div>
+    </div>
     <div class="panel-sec">
       <div class="sec-label">Live feedback</div>
       <div class="feedback" id="feedback">Enable camera to begin.</div>
@@ -337,6 +414,10 @@ function toggleMute(){
   if(muted&&'speechSynthesis'in window)window.speechSynthesis.cancel();
 }
 
+function toggleDrawer(){
+  document.getElementById('panel').classList.toggle('open');
+}
+
 function buildPanel(){
   const ex=EXERCISES[curEx];
   document.getElementById('ex-title').textContent=ex.name;
@@ -374,6 +455,9 @@ function updateStats(){
   document.getElementById('stat-reps').textContent=reps;
   document.getElementById('stat-perfect').textContent=perfectReps;
   document.getElementById('stat-sets').textContent=setsCompleted;
+  const pr=document.getElementById('peek-reps'),ps=document.getElementById('peek-set');
+  if(pr)pr.textContent=reps;
+  if(ps)ps.textContent=setNum;
 }
 
 function onRepComplete(){
