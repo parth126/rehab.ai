@@ -81,6 +81,20 @@ canvas{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
 .rest-btn:hover{border-color:var(--green);color:var(--green)}
 .rest-btn.primary{background:var(--green);color:#000;border-color:var(--green);font-weight:600}
 .rep-dots{display:flex;gap:5px;flex-wrap:wrap;justify-content:center;max-width:320px}
+.rep-dot.tappable{cursor:pointer;transition:transform .15s}
+.rep-dot.tappable:hover{transform:scale(1.12)}
+.rep-dot.tappable.bad{box-shadow:0 0 0 2px rgba(255,68,68,.25)}
+
+.replay-overlay{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(8,10,14,.96);z-index:50;pointer-events:all;padding:20px}
+.replay-overlay.show{display:flex}
+.replay-head{display:flex;align-items:center;justify-content:space-between;width:100%;max-width:380px}
+.replay-title{font-size:16px;font-weight:600;color:var(--text)}
+.replay-close{background:transparent;border:1px solid var(--border);color:var(--text);width:34px;height:34px;border-radius:8px;cursor:pointer;font-size:15px;transition:all .2s}
+.replay-close:hover{border-color:var(--red);color:var(--red)}
+.replay-canvas{background:#0d1016;border:1px solid var(--border);border-radius:12px;width:340px;height:340px;max-width:86vw;max-height:86vw}
+.replay-issues{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:380px}
+.replay-issue{font-size:12px;color:var(--red);background:rgba(255,68,68,.1);border:1px solid var(--red);border-radius:20px;padding:4px 12px}
+.replay-hint{font-size:11px;font-family:var(--mono);color:var(--muted)}
 .rep-dot{width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;border:1px solid}
 .rep-dot.good{background:rgba(0,229,160,.12);border-color:var(--green);color:var(--green)}
 .rep-dot.bad{background:rgba(255,68,68,.12);border-color:var(--red);color:var(--red)}
@@ -243,6 +257,16 @@ canvas{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
         <button class="rest-btn primary" onclick="startNextSet()">Start next set</button>
       </div>
     </div>
+
+    <div class="replay-overlay" id="replay-overlay">
+      <div class="replay-head">
+        <div class="replay-title" id="replay-title">Rep 3 replay</div>
+        <button class="replay-close" onclick="closeReplay()">✕</button>
+      </div>
+      <canvas class="replay-canvas" id="replay-canvas" width="360" height="360"></canvas>
+      <div class="replay-issues" id="replay-issues"></div>
+      <div class="replay-hint">Looping · red joints show the form issue</div>
+    </div>
   </div>
 
   <div class="panel" id="panel">
@@ -386,6 +410,10 @@ let curRepBadFrames=0;
 let setRepLog=[];
 let setErrorTally={};
 
+let curRepBuffer=[];
+const MAX_REP_FRAMES=90;
+let replayInterval=null;
+
 const PERFECT_TOLERANCE=0.15;
 
 let restActive=false;
@@ -444,6 +472,7 @@ function resetSet(){
   reps=0;perfectReps=0;phase='up';badJoints=[];
   curRepErrors={};curRepFrames=0;curRepBadFrames=0;
   setRepLog=[];setErrorTally={};
+  curRepBuffer=[];
   document.getElementById('rep-num').textContent=0;
   document.getElementById('rep-target').textContent='/'+targetReps;
   document.getElementById('set-num').textContent=setNum;
@@ -465,9 +494,9 @@ function onRepComplete(){
   const wasClean=(curRepFrames===0)||(curRepBadFrames/Math.max(curRepFrames,1))<=PERFECT_TOLERANCE;
   const errsThisRep=Object.keys(curRepErrors);
   if(wasClean&&errsThisRep.length===0)perfectReps++;
-  setRepLog.push({rep:reps,clean:wasClean&&errsThisRep.length===0,errors:errsThisRep});
+  setRepLog.push({rep:reps,clean:wasClean&&errsThisRep.length===0,errors:errsThisRep,frames:curRepBuffer});
   errsThisRep.forEach(e=>{setErrorTally[e]=(setErrorTally[e]||0)+1});
-  curRepErrors={};curRepFrames=0;curRepBadFrames=0;
+  curRepErrors={};curRepFrames=0;curRepBadFrames=0;curRepBuffer=[];
 
   document.getElementById('rep-num').textContent=reps;
   speak(numberToWord(reps),{interrupt:true,rate:1.05});
@@ -509,7 +538,7 @@ function endSet(reason){
   cueEl.classList.toggle('clean',cueClean);
 
   const dots=document.getElementById('rep-dots');
-  dots.innerHTML=setRepLog.map(r=>`<div class="rep-dot ${r.clean?'good':'bad'}">${r.clean?'✓':'✗'}</div>`).join('');
+  dots.innerHTML=setRepLog.map((r,i)=>`<div class="rep-dot ${r.clean?'good':'bad'}${r.frames&&r.frames.length?' tappable':''}" ${r.frames&&r.frames.length?`onclick="openReplay(${i})"`:''}>${r.clean?'✓':'✗'}</div>`).join('');
 
   speak(spoken,{interrupt:true,rate:1.0});
   showRest();
@@ -528,13 +557,94 @@ function showRest(){
   },1000);
 }
 function addRestTime(){restRemaining+=30;document.getElementById('rest-timer').textContent=restRemaining;}
+function pauseRestTimer(){clearInterval(restTimerInterval);restTimerInterval=null;}
+function resumeRestTimer(){
+  if(restTimerInterval||!restActive)return;
+  restTimerInterval=setInterval(()=>{
+    restRemaining--;
+    document.getElementById('rest-timer').textContent=restRemaining;
+    if(restRemaining<=0){clearInterval(restTimerInterval);startNextSet();}
+  },1000);
+}
 function startNextSet(){
-  clearInterval(restTimerInterval);
+  clearInterval(restTimerInterval);restTimerInterval=null;
   restActive=false;
   document.getElementById('rest-overlay').classList.remove('show');
+  closeReplay();
   setNum++;
   resetSet();
   speak('Next set. '+numberToWord(targetReps)+' reps.',{interrupt:true});
+}
+
+function openReplay(idx){
+  const rep=setRepLog[idx];
+  if(!rep||!rep.frames||!rep.frames.length)return;
+  pauseRestTimer();
+  document.getElementById('replay-title').textContent='Rep '+rep.rep+' replay';
+  const ex=EXERCISES[curEx];
+  const issueEl=document.getElementById('replay-issues');
+  issueEl.innerHTML=(rep.errors||[]).map(e=>`<span class="replay-issue">${ex.errLabels[e]||e}</span>`).join('')||'<span class="replay-hint">minor form deviation</span>';
+  document.getElementById('replay-overlay').classList.add('show');
+  playReplay(rep.frames);
+}
+function closeReplay(){
+  if(replayInterval){clearInterval(replayInterval);replayInterval=null;}
+  document.getElementById('replay-overlay').classList.remove('show');
+  resumeRestTimer();
+}
+function playReplay(frames){
+  if(replayInterval){clearInterval(replayInterval);replayInterval=null;}
+  const cvs=document.getElementById('replay-canvas');
+  const ctx=cvs.getContext('2d');
+  const W=cvs.width,H=cvs.height;
+  const CONNS=window.POSE_CONNECTIONS||[];
+  let fi=0;
+  const FPS=12;
+
+  const bounds=(()=>{
+    let minX=1,maxX=0,minY=1,maxY=0;
+    frames.forEach(fr=>fr.lm.forEach(p=>{
+      if(p[2]<0.3)return;
+      if(p[0]<minX)minX=p[0];if(p[0]>maxX)maxX=p[0];
+      if(p[1]<minY)minY=p[1];if(p[1]>maxY)maxY=p[1];
+    }));
+    if(maxX<=minX){minX=0;maxX=1;minY=0;maxY=1;}
+    const pad=0.12;
+    return {minX:minX-pad,maxX:maxX+pad,minY:minY-pad,maxY:maxY+pad};
+  })();
+  const bw=bounds.maxX-bounds.minX, bh=bounds.maxY-bounds.minY;
+  const scale=Math.min(W/bw,H/bh)*0.92;
+  const offX=(W-bw*scale)/2, offY=(H-bh*scale)/2;
+  const tx=p=>offX+(p[0]-bounds.minX)*scale;
+  const ty=p=>offY+(p[1]-bounds.minY)*scale;
+
+  function drawFrame(){
+    const fr=frames[fi];
+    ctx.clearRect(0,0,W,H);
+    ctx.save();
+    ctx.translate(W,0);ctx.scale(-1,1);
+    const bad=fr.bad||[];
+    ctx.lineCap='round';
+    CONNS.forEach(([a,b])=>{
+      const pa=fr.lm[a],pb=fr.lm[b];
+      if(!pa||!pb||pa[2]<0.3||pb[2]<0.3)return;
+      const isBad=bad.includes(a)||bad.includes(b);
+      ctx.strokeStyle=isBad?'rgba(255,68,68,0.95)':'rgba(0,229,160,0.75)';
+      ctx.lineWidth=isBad?5:3.5;
+      ctx.beginPath();ctx.moveTo(tx(pa),ty(pa));ctx.lineTo(tx(pb),ty(pb));ctx.stroke();
+    });
+    fr.lm.forEach((p,i)=>{
+      if(p[2]<0.32)return;
+      const isBad=bad.includes(i),isKey=[11,12,13,14,15,16,23,24,25,26,27,28].includes(i);
+      ctx.beginPath();ctx.arc(tx(p),ty(p),isKey?6:3.5,0,Math.PI*2);
+      ctx.fillStyle=isBad?'#ff4444':isKey?'#00e5a0':'rgba(0,229,160,0.5)';ctx.fill();
+      if(isBad){ctx.beginPath();ctx.arc(tx(p),ty(p),11,0,Math.PI*2);ctx.strokeStyle='rgba(255,68,68,0.4)';ctx.lineWidth=2;ctx.stroke();}
+    });
+    ctx.restore();
+    fi=(fi+1)%frames.length;
+  }
+  drawFrame();
+  replayInterval=setInterval(drawFrame,1000/FPS);
 }
 
 function countRep(ang){
@@ -603,6 +713,10 @@ function onResults(res){
   if(!restActive&&phase==='down'){
     curRepFrames++;
     if(result.status==='bad'){curRepBadFrames++;if(result.err)curRepErrors[result.err]=(curRepErrors[result.err]||0)+1;}
+    if(curRepBuffer.length<MAX_REP_FRAMES){
+      const compact=lm.map(p=>[+p.x.toFixed(3),+p.y.toFixed(3),+(p.visibility||0).toFixed(2)]);
+      curRepBuffer.push({lm:compact,bad:result.joints||[]});
+    }
   }
   countRep(angles);
   drawLive(ctx,lm,w,h,badJoints);
