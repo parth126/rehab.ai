@@ -188,7 +188,7 @@ canvas{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
 <body>
 
 <header>
-  <div class="logo">PhysioTrack — Sets &amp; Voice</div>
+  <div class="logo">PhysioTrack — Sets &amp; Voice <span style="color:var(--muted);font-size:10px">v2.3</span></div>
   <div class="head-right">
     <div class="mute-btn" id="mute-btn" onclick="toggleMute()"><span id="mute-icon">🔊</span><span id="mute-txt">voice on</span></div>
     <div class="status-pill"><div class="dot" id="dot"></div><span id="status-txt">idle</span></div>
@@ -761,6 +761,7 @@ async function startCam(){
   catch(e){setStatus('','camera error');setFeedback('bad','Camera access denied. Allow permissions and reload.');document.getElementById('start-overlay').style.display='flex';}
 }
 
+console.log('%cPhysioTrack v2.3','color:#00e5a0;font-weight:bold;font-size:14px');
 setTarget(10);
 buildPanel();
 </script>
